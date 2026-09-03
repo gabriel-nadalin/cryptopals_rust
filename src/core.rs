@@ -6,7 +6,7 @@ use base64::prelude::*;
 use itertools::Itertools;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
-use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyInit, block_padding::NoPadding};
+use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyInit, block_padding::{NoPadding, Pkcs7}};
 
 type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
 type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
@@ -23,7 +23,6 @@ pub const ENGLISH_FREQ: Lazy<HashMap<char, f64>> = Lazy::new(|| {
     ])
 });
 
-// key for challenge s02c03
 pub static SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
     generate_aes_key()
 });
@@ -155,29 +154,28 @@ pub fn pkcs7_pad(payload: &[u8], block_size: usize) -> Vec<u8> {
     [payload, &padding].concat()
 }
 
-pub fn pkcs7_unpad(payload: &[u8]) -> Vec<u8> {
+pub fn pkcs7_unpad(payload: &[u8]) -> Result<Vec<u8>, String> {
     let n = payload.last().unwrap();
     let pad = &payload[payload.len() - *n as usize..];
 
     if pad.iter().any(|x| x != n) {
-        payload.to_vec()
+        Err("invalid padding".to_owned())
     } else {
-        payload[..payload.len() - *n as usize].to_vec()
+        Ok(payload[..payload.len() - *n as usize].to_vec())
     }
 }
 
 pub fn ecb_decrypt(ciphertext: &[u8], key: &[u8]) -> Vec<u8> {
     Aes128EcbDec::new_from_slice(key)
         .unwrap()
-        .decrypt_padded_vec::<NoPadding>(ciphertext)
+        .decrypt_padded_vec::<Pkcs7>(ciphertext)
         .unwrap()
 }
 
 pub fn ecb_encrypt(payload: &[u8], key: &[u8]) -> Vec<u8> {
-    let padded = pkcs7_pad(&payload, key.len());
     Aes128EcbEnc::new_from_slice(key)
         .unwrap()
-        .encrypt_padded_vec::<NoPadding>(&padded)
+        .encrypt_padded_vec::<Pkcs7>(&payload)
 }
 
 pub fn detect_ecb(ciphertext: &[u8]) -> bool {
@@ -188,27 +186,29 @@ pub fn detect_ecb(ciphertext: &[u8]) -> bool {
         .map(|(a, b)| (a.to_vec(), *b))
         .collect();
 
-    counts[0].1 > 2
+    counts[0].1 > 1
 }
 
 pub fn cbc_decrypt(ciphertext: &[u8], iv:&[u8], key: &[u8]) -> Vec<u8> {
     let block_size = key.len();
-    let mut blocks = ciphertext.chunks(block_size).rev().collect_vec();
-    blocks.push(iv);
+    let mut blocks = ciphertext.chunks(block_size).collect_vec();
+    blocks.insert(0, iv);
 
-    let plaintext = blocks
+    let plaintext: Vec<u8> = blocks
         .windows(2)
         .map(|pair| {
-            let (cur_block, next_block) = (pair[0], pair[1]);
-            let decrypted = ecb_decrypt(cur_block, key);
+            let (prev_block, cur_block) = (pair[0], pair[1]);
+            let decrypted = Aes128EcbDec::new_from_slice(key)
+                .unwrap()
+                .decrypt_padded_vec::<NoPadding>(cur_block)
+                .unwrap();
 
-            xor_slice(&decrypted, next_block)
+            xor_slice(&decrypted, prev_block)
         })
-        .rev()
         .flatten()
         .collect();
 
-    plaintext
+    pkcs7_unpad(&plaintext).unwrap()
 }
 
 pub fn cbc_encrypt(payload: &[u8], iv:&[u8], key: &[u8]) -> Vec<u8> {
@@ -235,29 +235,6 @@ pub fn generate_aes_key() -> Vec<u8> {
     rand::random_iter().take(16).collect()
 }
 
-pub fn random_encryption_oracle(payload: &[u8]) -> (Vec<u8>, bool) {
-    let key = generate_aes_key();
-    let prefix = rand::random_iter().take(rand::random_range(5..=10)).collect_vec();
-    let suffix = rand::random_iter().take(rand::random_range(5..=10)).collect_vec();
-    let concat = [&prefix, payload, &suffix].concat();
-
-    let choice = rand::random();
-    if choice {
-        (ecb_encrypt(&concat, &key), choice)
-    } else {
-        let iv = rand::random_iter().take(16).collect_vec();
-        (cbc_encrypt(&concat, &iv, &key), choice)
-    }
-}
-
-pub fn encrypt_append(payload: &[u8]) -> Vec<u8> {
-    let suffix = base64_to_bytes("Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK");
-    
-    let append = [payload, &suffix].concat();
-
-    ecb_encrypt(&append, &SECRET_KEY)
-}
-
 pub fn detect_block_size<F>(encrypt_fn: F) -> usize where F: Fn(&[u8]) -> Vec<u8> {
     let base_len = encrypt_fn(&[]).len();
     for i in 0..=64 {
@@ -272,10 +249,28 @@ pub fn detect_block_size<F>(encrypt_fn: F) -> usize where F: Fn(&[u8]) -> Vec<u8
     panic!("could not detect block size");
 }
 
-pub fn kv_to_hashmap(string: &str) -> HashMap<Vec<u8>, Vec<u8>> {
-    let x = string
-        .split('&')
-        .map(|kv| {
-            kv.split('=').map(|[k, v]| )
-        }).
+pub fn kv_to_hashmap(string: &str) -> HashMap<String, String> {
+    string.split('&')
+        .map(|items| {
+            let item = items.split('=').collect_vec();
+            (item[0].to_string(), item[1].to_string())
+        })
+        .collect()
+}
+
+pub fn hashmap_to_kv(hashmap: HashMap<String, String>) -> String {
+    hashmap.iter()
+        .map(|(key, value)| format!("{}={}", key, value))
+        .join("&")
+}
+
+pub fn detect_prefix_len<F>(encrypt_fn: F, block_size: usize) -> usize where F: Fn(&[u8]) -> Vec<u8> {
+    for i in 0..3*block_size {
+        let payload = vec!['A' as u8; i];
+        let ciphertext = encrypt_fn(&payload);
+        if detect_ecb(&ciphertext) {
+            return (block_size - (i % block_size)) % block_size;
+        }
+    }
+    0
 }

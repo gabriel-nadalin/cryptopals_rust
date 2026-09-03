@@ -3,7 +3,7 @@ mod tests {
     use crate::core::*;
 
     #[test]
-    fn s02_c01_hex_to_base64() {
+    fn s02_c01_implement_pkcs7_padding() {
         let payload = b"YELLOW SUBMARINE";
         let expected = b"YELLOW SUBMARINE\x04\x04\x04\x04";
 
