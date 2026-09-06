@@ -12,7 +12,7 @@ mod tests {
     }
 
     fn decrypt_profile(ciphertext: &[u8]) -> HashMap<String, String> {
-        let string = bytes_to_ascii(&ecb_decrypt(ciphertext, &SECRET_KEY));
+        let string = bytes_to_ascii(&ecb_decrypt(ciphertext, &SECRET_KEY).unwrap());
         kv_to_hashmap(&string)
     }
 

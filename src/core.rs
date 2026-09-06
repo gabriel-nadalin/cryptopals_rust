@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyInit, block_padding::{NoPadding, Pkcs7}};
 
-type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
-type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
+pub type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
+pub type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
 
 pub const ENGLISH_FREQ: Lazy<HashMap<char, f64>> = Lazy::new(|| {
     HashMap::from([
@@ -19,11 +19,15 @@ pub const ENGLISH_FREQ: Lazy<HashMap<char, f64>> = Lazy::new(|| {
         ('u', 2.76), ('m', 2.41), ('w', 2.36), ('f', 2.23),
         ('g', 2.02), ('y', 1.97), ('p', 1.93), ('b', 1.29),
         ('v', 0.98), ('k', 0.77), ('j', 0.15), ('x', 0.15),
-        ('q', 0.10), ('z', 0.07), (' ', 13.00)
+        ('q', 0.10), ('z', 0.07), (' ', 13.00), (0 as char, 0.0)
     ])
 });
 
 pub static SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
+    generate_aes_key()
+});
+
+pub static SECRET_IV: Lazy<Vec<u8>> = Lazy::new(|| {
     generate_aes_key()
 });
 
@@ -63,16 +67,19 @@ pub fn single_byte_xor(bytes: &[u8], key: u8) -> Vec<u8> {
 pub fn score_english(bytes: &[u8]) -> f64 {
     let mut score = 0.0;
 
-    for byte in bytes {
-        let chr = byte.to_ascii_lowercase() as char;
-        if ENGLISH_FREQ.contains_key(&chr) {
-            score += ENGLISH_FREQ[&chr]
-        } 
-        else {
-            score -= 10.0
-        }
-    }
+    for &byte in bytes {
+        score += match byte {
+            b' ' => 13.0,                       // most common char
+            b'a'..=b'z' => ENGLISH_FREQ[&(byte as char)],          // lowercase, full weight
+            b'A'..=b'Z' => ENGLISH_FREQ[&(byte.to_ascii_lowercase() as char)] * 0.2,
+            b'\'' => 2.0,                       // contractions/possessives (poetry!)
+            b'.'  => 2.5, b',' => 1.5, b'-' => 1.0, b':' => 1.0,
+            b'?'  => 0.8, b'!' => 0.5, b'"' => 0.5, b';' => 0.5,
+            b'0'..=b'9' => 0.5,
+            _ => -10.0,                         // control / rare / high bytes
+        };
 
+    }
     score
 }
 
@@ -117,7 +124,7 @@ pub fn hamming_distance_slice(a: &[u8], b: &[u8]) -> usize {
 }
 
 pub fn crack_repeating_key_xor(ciphertext: &[u8]) -> Vec<u8> {
-    let keysize = (2..=40)
+    let keysize = (2..=128)
         .map(|keysize| {
             let mut total = 0.0;
             let mut count = 0;
@@ -129,9 +136,10 @@ pub fn crack_repeating_key_xor(ciphertext: &[u8]) -> Vec<u8> {
                 count += 1;
             }
             let avg = total / count as f64;
-    
+
             (keysize, avg)
         })
+        .filter(|(_keysize, avg)| !avg.is_nan())
         .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
         .map(|(keysize, _avg)| keysize)
         .unwrap();
@@ -146,36 +154,36 @@ pub fn crack_repeating_key_xor(ciphertext: &[u8]) -> Vec<u8> {
     key
 }
 
-pub fn pkcs7_pad(payload: &[u8], block_size: usize) -> Vec<u8> {
-    let last_block = payload.chunks(block_size).last().unwrap();
+pub fn pkcs7_pad(plaintext: &[u8], block_size: usize) -> Vec<u8> {
+    let last_block = plaintext.chunks(block_size).last().unwrap();
     let mut n = block_size - last_block.len();
     if n == 0 { n = block_size };
     let padding = vec![n as u8; n];
-    [payload, &padding].concat()
+    [plaintext, &padding].concat()
 }
 
-pub fn pkcs7_unpad(payload: &[u8]) -> Result<Vec<u8>, String> {
-    let n = payload.last().unwrap();
-    let pad = &payload[payload.len() - *n as usize..];
+pub fn pkcs7_unpad(plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    let n = plaintext.last().unwrap();
+    let pad = &plaintext[plaintext.len().saturating_sub(*n as usize)..];
 
-    if pad.iter().any(|x| x != n) {
+    if *n > 16 || *n == 0 || pad.iter().any(|x| x != n) {
         Err("invalid padding".to_owned())
     } else {
-        Ok(payload[..payload.len() - *n as usize].to_vec())
+        Ok(plaintext[..plaintext.len().saturating_sub(*n as usize)].to_vec())
     }
 }
 
-pub fn ecb_decrypt(ciphertext: &[u8], key: &[u8]) -> Vec<u8> {
+pub fn ecb_decrypt(ciphertext: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
     Aes128EcbDec::new_from_slice(key)
         .unwrap()
         .decrypt_padded_vec::<Pkcs7>(ciphertext)
-        .unwrap()
+        .map_err(|e| e.to_string())
 }
 
-pub fn ecb_encrypt(payload: &[u8], key: &[u8]) -> Vec<u8> {
+pub fn ecb_encrypt(plaintext: &[u8], key: &[u8]) -> Vec<u8> {
     Aes128EcbEnc::new_from_slice(key)
         .unwrap()
-        .encrypt_padded_vec::<Pkcs7>(&payload)
+        .encrypt_padded_vec::<Pkcs7>(&plaintext)
 }
 
 pub fn detect_ecb(ciphertext: &[u8]) -> bool {
@@ -189,15 +197,15 @@ pub fn detect_ecb(ciphertext: &[u8]) -> bool {
     counts[0].1 > 1
 }
 
-pub fn cbc_decrypt(ciphertext: &[u8], iv:&[u8], key: &[u8]) -> Vec<u8> {
+pub fn cbc_decrypt(ciphertext: &[u8], key: &[u8], iv:&[u8]) -> Result<Vec<u8>, String> {
     let block_size = key.len();
     let mut blocks = ciphertext.chunks(block_size).collect_vec();
     blocks.insert(0, iv);
 
     let plaintext: Vec<u8> = blocks
-        .windows(2)
-        .map(|pair| {
-            let (prev_block, cur_block) = (pair[0], pair[1]);
+        .iter()
+        .tuple_windows()
+        .map(|(prev_block, cur_block)| {
             let decrypted = Aes128EcbDec::new_from_slice(key)
                 .unwrap()
                 .decrypt_padded_vec::<NoPadding>(cur_block)
@@ -208,12 +216,12 @@ pub fn cbc_decrypt(ciphertext: &[u8], iv:&[u8], key: &[u8]) -> Vec<u8> {
         .flatten()
         .collect();
 
-    pkcs7_unpad(&plaintext).unwrap()
+    pkcs7_unpad(&plaintext)
 }
 
-pub fn cbc_encrypt(payload: &[u8], iv:&[u8], key: &[u8]) -> Vec<u8> {
+pub fn cbc_encrypt(plaintext: &[u8], key: &[u8], iv:&[u8]) -> Vec<u8> {
     let block_size = key.len();
-    let padded = pkcs7_pad(payload, block_size);
+    let padded = pkcs7_pad(plaintext, block_size);
     let blocks = padded.chunks(block_size).collect_vec();    
     let mut prev_block = iv;
     
@@ -273,4 +281,17 @@ pub fn detect_prefix_len<F>(encrypt_fn: F, block_size: usize) -> usize where F: 
         }
     }
     0
+}
+
+pub fn ctr(ciphertext: &[u8], key: &[u8], nonce: u64) -> Vec<u8> {
+    ciphertext.chunks(16)
+        .enumerate()
+        .map(|(i, block)| {
+            let keystream = Aes128EcbEnc::new_from_slice(key)
+                .unwrap()
+                .encrypt_padded_vec::<NoPadding>(&&[nonce.to_le_bytes(), i.to_le_bytes()].concat());
+            xor_slice(block, &keystream[..block.len()])
+        })
+        .flatten()
+        .collect()
 }

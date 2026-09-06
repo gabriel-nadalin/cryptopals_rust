@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use crate::core::*;
 
     const STRINGS: [&str; 10] = [
@@ -16,16 +18,56 @@ mod tests {
     ];
 
     fn random_encrypt() -> (Vec<u8>, Vec<u8>) {
-        let string = STRINGS[rand::random_range(0..10)].as_bytes();
-        let padded = pkcs7_pad(string, 16);
-        let iv = generate_aes_key();
-        let ciphertext = cbc_encrypt(&padded, &iv, &SECRET_KEY);
-        (ciphertext, iv)
+        let string = STRINGS[rand::random_range(0..10)];
+        let ciphertext = cbc_encrypt(&base64_to_bytes(string), &SECRET_KEY, &SECRET_IV);
+        (ciphertext, SECRET_IV.to_vec())
     }
 
+    fn padding_is_valid(ciphertext: &[u8], iv: &[u8]) -> bool {
+        let plaintext = cbc_decrypt(ciphertext, &SECRET_KEY, iv);
+
+        match plaintext {
+            Ok(_) => true,
+            Err(_) => false            
+        }
+    }
 
     #[test]
     fn s03_c01_the_cbc_padding_oracle() {
-        
+        let (ciphertext, iv) = random_encrypt();
+        let mut plaintext = Vec::new();
+
+        for (prev_block, cur_block) in [iv, ciphertext].concat().chunks(16).tuple_windows() {
+            let mut plainblock = vec![0; 16];
+            let mut interblock = vec![0; 16];
+            let mut payload = prev_block.to_vec();
+
+            for i in 0..16 {
+
+                for candidate in 0..=255 {
+
+                    payload[15 - i] = candidate;
+                    if padding_is_valid(&cur_block, &payload) {
+                    if i == 0 {
+                        let mut copy = payload.to_vec();
+                        copy[14] ^= 1;
+                        if !padding_is_valid(&cur_block, &copy) {
+                            continue
+                        }
+                    }
+                    interblock[15-i] = candidate ^ (i + 1) as u8;
+                    plainblock[15-i] = prev_block[15-i] ^ interblock[15-i];
+                    for j in 15-i..16 {
+                        payload[j] = (i+2) as u8 ^ interblock[j];
+                    }
+                    break;
+                    }
+                }
+            }
+            plaintext.append(&mut plainblock);
+        }
+        let plaintext = pkcs7_unpad(&plaintext).unwrap();
+
+        assert!(STRINGS.iter().any(|s| base64_to_bytes(s) == plaintext.as_slice()));
     }
 }

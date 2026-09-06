@@ -14,7 +14,7 @@ mod tests {
         let input = base64_to_bytes(&contents.replace("\n", ""));
         let key = b"YELLOW SUBMARINE";
 
-        let decrypted = ecb_decrypt(&input, key);
+        let decrypted = ecb_decrypt(&input, key).unwrap();
 
         let file_out = File::open("src/set_01/chal_07_decode.txt").unwrap();
         let mut reader_out = BufReader::new(file_out);

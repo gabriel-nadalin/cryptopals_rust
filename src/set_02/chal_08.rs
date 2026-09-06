@@ -1,21 +1,15 @@
 #[cfg(test)]
 mod tests {
-    use once_cell::sync::Lazy;
-
     use crate::core::*;
-
-    static IV: Lazy<Vec<u8>> = Lazy::new(|| {
-        generate_aes_key()
-    });
 
     fn encrypt_comments(infix: &str) -> Vec<u8> {
         let infix = infix.replace(";", "").replace("=", "");
         let string = format!("comment1=cooking%20MCs;userdata={infix};comment2=%20like%20a%20pound%20of%20bacon");
-        cbc_encrypt(string.as_bytes(), &IV, &SECRET_KEY)
+        cbc_encrypt(string.as_bytes(), &SECRET_KEY, &SECRET_IV)
     }
 
     fn check_admin(ciphertext: &[u8]) -> bool {
-        let plaintext = cbc_decrypt(ciphertext, &IV, &SECRET_KEY);
+        let plaintext = cbc_decrypt(ciphertext, &SECRET_KEY, &SECRET_IV).unwrap();
         let string = bytes_to_ascii(&plaintext);
         println!("{string}");
         string.contains(";admin=true;")
