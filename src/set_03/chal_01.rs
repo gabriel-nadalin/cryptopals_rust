@@ -48,19 +48,19 @@ mod tests {
 
                     payload[15 - i] = candidate;
                     if padding_is_valid(&cur_block, &payload) {
-                    if i == 0 {
-                        let mut copy = payload.to_vec();
-                        copy[14] ^= 1;
-                        if !padding_is_valid(&cur_block, &copy) {
-                            continue
+                        if i == 0 {
+                            let mut copy = payload.to_vec();
+                            copy[14] ^= 1;
+                            if !padding_is_valid(&cur_block, &copy) {
+                                continue
+                            }
                         }
-                    }
-                    interblock[15-i] = candidate ^ (i + 1) as u8;
-                    plainblock[15-i] = prev_block[15-i] ^ interblock[15-i];
-                    for j in 15-i..16 {
-                        payload[j] = (i+2) as u8 ^ interblock[j];
-                    }
-                    break;
+                        interblock[15-i] = candidate ^ (i + 1) as u8;
+                        plainblock[15-i] = prev_block[15-i] ^ interblock[15-i];
+                        for j in 15-i..16 {
+                            payload[j] = (i+2) as u8 ^ interblock[j];
+                        }
+                        break;
                     }
                 }
             }

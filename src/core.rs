@@ -295,3 +295,65 @@ pub fn ctr(ciphertext: &[u8], key: &[u8], nonce: u64) -> Vec<u8> {
         .flatten()
         .collect()
 }
+
+pub struct MT19937 {
+    state_array: Vec<u32>,
+    index: usize
+}
+
+impl MT19937 {
+    const N: u32 = 624;
+    const M: u32 = 397;
+    const W: u32 = 32;
+    const R: u32 = 31;
+    const UMASK: u32 = (0xffffffff << Self::R);
+    const LMASK: u32 = (0xffffffff >> (Self::W - Self::R));
+    const A: u32 = 0x9908b0df;
+    const U: u32 = 11;
+    const S: u32 = 7;
+    const T: u32 = 15;
+    const L: u32 = 18;
+    const B: u32 = 0x9d2c5680;
+    const C: u32 = 0xefc60000;
+    const F: u32 = 1812433253;
+
+    pub fn new(seed: u32) -> Self {
+        let mut seed = seed.clone();
+        let mut state_array = vec![seed];
+
+        for i in 1..Self::N {
+            seed = Self::F.wrapping_mul(seed ^ (seed >> (Self::W-2))).wrapping_add(i);
+            state_array.push(seed);
+        }
+
+        Self {
+            state_array,
+            index: 0
+        }
+    }
+
+    pub fn random_u32(&mut self) -> u32 {
+        let mut k = self.index;
+        let mut j = (k + 1) % Self::N as usize;
+
+        let mut x = (self.state_array[k] & Self::UMASK) | (self.state_array[j] & Self::LMASK);
+        let mut x_a = x >> 1;
+        if x & 1 == 1 { x_a ^= Self::A };
+
+        j = (k + Self::M as usize) % Self::N as usize;
+
+        x = self.state_array[j] ^ x_a;
+        self.state_array[k] = x;
+        k += 1;
+
+        if k >= Self::N as usize { k = 0 };
+        self.index = k;
+
+        let mut y = x ^ (x >> Self::U);
+        y = y ^ ((y << Self::S) & Self::B);
+        y = y ^ ((y << Self::T) & Self::C);
+        let z = y ^ (y >> Self::L);
+
+        z
+    }
+}
