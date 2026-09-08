@@ -19,7 +19,7 @@ mod tests {
 
         let n = 500;
         let seed = 1131464071;
-        let mut rng = MT19937::new(seed);
+        let mut rng = MT19937::new(&seed);
         let generated = (0..n).map(|_| rng.random_u32()).collect_vec();
         assert_eq!(generated, expected[..n]);
     }

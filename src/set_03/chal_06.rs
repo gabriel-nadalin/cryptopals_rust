@@ -10,14 +10,14 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as u32;
-        let mut rng = MT19937::new(seed);
+        let mut rng = MT19937::new(&seed);
         thread::sleep(Duration::from_secs(rand::random_range(40..500)));
         (seed, rng.random_u32())
     }
 
     fn crack_mt19937_seed(output: u32, mut range: Range<u32>) -> Option<u32> {
         range.find(|&seed| {
-            let mut  rng = MT19937::new(seed);
+            let mut rng = MT19937::new(&seed);
             rng.random_u32() == output
         })
     }
