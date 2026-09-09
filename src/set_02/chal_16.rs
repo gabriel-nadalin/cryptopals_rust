@@ -11,7 +11,6 @@ mod tests {
     fn check_admin(ciphertext: &[u8]) -> bool {
         let plaintext = cbc_decrypt(ciphertext, &AES_KEY, &IV).unwrap();
         let string = bytes_to_ascii(&plaintext);
-        println!("{string}");
         string.contains(";admin=true;")
     }
 

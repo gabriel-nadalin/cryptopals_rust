@@ -1,8 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::io::{BufReader, Read};
-
     use crate::core::*;
 
     #[test]
