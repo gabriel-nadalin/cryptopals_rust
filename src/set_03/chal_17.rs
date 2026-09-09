@@ -19,12 +19,12 @@ mod tests {
 
     fn random_encrypt() -> (Vec<u8>, Vec<u8>) {
         let string = STRINGS[rand::random_range(0..10)];
-        let ciphertext = cbc_encrypt(&base64_to_bytes(string), &SECRET_KEY, &SECRET_IV);
-        (ciphertext, SECRET_IV.to_vec())
+        let ciphertext = cbc_encrypt(&base64_to_bytes(string), &AES_KEY, &IV);
+        (ciphertext, IV.to_vec())
     }
 
     fn padding_is_valid(ciphertext: &[u8], iv: &[u8]) -> bool {
-        let plaintext = cbc_decrypt(ciphertext, &SECRET_KEY, iv);
+        let plaintext = cbc_decrypt(ciphertext, &AES_KEY, iv);
 
         match plaintext {
             Ok(_) => true,
@@ -33,7 +33,7 @@ mod tests {
     }
 
     #[test]
-    fn s03_c01_the_cbc_padding_oracle() {
+    fn s03_c17_the_cbc_padding_oracle() {
         let (ciphertext, iv) = random_encrypt();
         let mut plaintext = Vec::new();
 

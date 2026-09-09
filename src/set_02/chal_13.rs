@@ -8,16 +8,16 @@ mod tests {
     fn profile_for(email: &str) -> Vec<u8> {
         let email = email.replace("&", "").replace("=", "");
         let string = format!("email={email}&uid=10&role=user");
-        ecb_encrypt(string.as_bytes(), &SECRET_KEY)
+        ecb_encrypt(string.as_bytes(), &AES_KEY)
     }
 
     fn decrypt_profile(ciphertext: &[u8]) -> HashMap<String, String> {
-        let string = bytes_to_ascii(&ecb_decrypt(ciphertext, &SECRET_KEY).unwrap());
+        let string = bytes_to_ascii(&ecb_decrypt(ciphertext, &AES_KEY).unwrap());
         kv_to_hashmap(&string)
     }
 
     #[test]
-    fn s02_c05_ecb_cut_and_paste() {let payload = "AAAAAAAAAA".to_owned() + &String::from_utf8(pkcs7_pad(b"admin", 16)).unwrap();
+    fn s02_c13_ecb_cut_and_paste() {let payload = "AAAAAAAAAA".to_owned() + &String::from_utf8(pkcs7_pad(b"admin", 16)).unwrap();
         let ciphertext = profile_for(&payload);
         let admin_block = ciphertext.chunks(16).collect_vec()[1];
 

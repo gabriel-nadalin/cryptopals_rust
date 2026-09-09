@@ -6,12 +6,8 @@ mod tests {
 
     #[test]
     fn s01_c06_cracking_repeating_key_xor() {
-        let file_in = File::open("src/set_01/chal_06.txt").unwrap();
-        let mut reader_in = BufReader::new(file_in);
-        let mut contents = String::new();
-        reader_in.read_to_string(&mut contents).unwrap();
         
-        let input = base64_to_bytes(&contents.replace("\n", ""));
+        let input = base64_to_bytes(&file_to_string("src/set_01/chal_06.txt"));
 
         let key = crack_repeating_key_xor(&input);
 

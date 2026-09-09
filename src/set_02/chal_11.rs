@@ -11,15 +11,15 @@ mod tests {
 
         let choice = rand::random();
         if choice {
-            (ecb_encrypt(&concat, &SECRET_KEY), choice)
+            (ecb_encrypt(&concat, &AES_KEY), choice)
         } else {
             let iv = rand::random_iter().take(16).collect_vec();
-            (cbc_encrypt(&concat, &SECRET_KEY, &iv), choice)
+            (cbc_encrypt(&concat, &AES_KEY, &iv), choice)
         }
     }
 
     #[test]
-    fn s02_c03_ecb_cbc_detection_oracle() {
+    fn s02_c11_ecb_cbc_detection_oracle() {
         let payload = b"YELLOW SUBMARINE".repeat(5);
 
         for _ in 0..30 {

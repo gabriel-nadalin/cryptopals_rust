@@ -3,7 +3,7 @@ mod tests {
     use crate::core::*;
 
     #[test]
-    fn s04_c06() {
+    fn s04_c32() {
         
     }
 }

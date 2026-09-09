@@ -1,8 +1,8 @@
-pub mod chal_01;
-pub mod chal_02;
-pub mod chal_03;
-pub mod chal_04;
-pub mod chal_05;
-pub mod chal_06;
-pub mod chal_07;
-pub mod chal_08;
+pub mod chal_25;
+pub mod chal_26;
+pub mod chal_27;
+pub mod chal_28;
+pub mod chal_29;
+pub mod chal_30;
+pub mod chal_31;
+pub mod chal_32;

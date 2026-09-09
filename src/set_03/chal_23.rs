@@ -25,8 +25,8 @@ mod tests {
     }
 
     #[test]
-    fn s03_c07_cloning_an_mt19937_rng_from_its_output() {
-        let mut rng = MT19937::new(&rand::random());
+    fn s03_c23_cloning_an_mt19937_rng_from_its_output() {
+        let mut rng = MT19937::new(rand::random());
         let recovered_state = (0..624)
             .map(|_| untemper(&rng.random_u32()))
             .collect_vec();

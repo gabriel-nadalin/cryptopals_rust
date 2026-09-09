@@ -6,12 +6,7 @@ mod tests {
 
     #[test]
     fn s01_c07_aes_in_ecb_mode() {
-        let file_in = File::open("src/set_01/chal_07.txt").unwrap();
-        let mut reader_in = BufReader::new(file_in);
-        let mut contents = String::new();
-        reader_in.read_to_string(&mut contents).unwrap();
-        
-        let input = base64_to_bytes(&contents.replace("\n", ""));
+        let input = base64_to_bytes(&file_to_string("src/set_01/chal_07.txt"));
         let key = b"YELLOW SUBMARINE";
 
         let decrypted = ecb_decrypt(&input, key).unwrap();

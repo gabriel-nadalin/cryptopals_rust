@@ -8,17 +8,17 @@ mod tests {
     use crate::core::*;
 
     fn encrypt_strings() -> Vec<Vec<u8>> {
-        let file_in = File::open("src/set_03/chal_04.txt").unwrap();
+        let file_in = File::open("src/set_03/chal_20.txt").unwrap();
         let mut reader_in = BufReader::new(file_in);
         let mut contents = String::new();
         reader_in.read_to_string(&mut contents).unwrap();
         
         let ciphertexts = contents.split("\n").collect_vec();
-        ciphertexts.iter().map(|ciphertext| ctr(&base64_to_bytes(*ciphertext), &SECRET_KEY, 0)).collect_vec()
+        ciphertexts.iter().map(|ciphertext| ctr(&base64_to_bytes(*ciphertext), &AES_KEY, 0)).collect_vec()
     }
 
     #[test]
-    fn s03_c04_breaking_fixed_nonce_ctr_statistically() {
+    fn s03_c20_breaking_fixed_nonce_ctr_statistically() {
         let mut ciphertexts = encrypt_strings();
 
         let min_len = ciphertexts.iter().map(Vec::len).min().unwrap_or(0);
@@ -37,7 +37,7 @@ mod tests {
         }
         
         let expected_keystream = (0..10).map(|i: u64| {
-            Aes128EcbEnc::new_from_slice(&SECRET_KEY)
+            Aes128EcbEnc::new_from_slice(&AES_KEY)
                 .unwrap()
                 .encrypt_padded_vec::<NoPadding>(&&[0_u64.to_le_bytes(), i.to_le_bytes()].concat())
             })

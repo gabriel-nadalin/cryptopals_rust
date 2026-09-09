@@ -51,13 +51,13 @@ mod tests {
     fn encrypt_strings() -> Vec<Vec<u8>> {
         STRINGS.map(|string| {
             let plaintext = base64_to_bytes(string);
-            ctr(&plaintext, &SECRET_KEY, 0)
+            ctr(&plaintext, &AES_KEY, 0)
         })
         .to_vec()
     }
 
     #[test]
-    fn s03_c03_breaking_fixed_nonce_ctr_with_substitutions() {
+    fn s03_c19_breaking_fixed_nonce_ctr_with_substitutions() {
         let ciphertexts = encrypt_strings();
 
         let max_len = ciphertexts.iter().map(Vec::len).max().unwrap_or(0);
@@ -82,7 +82,7 @@ mod tests {
         }
         
         let real_keystream = (0..2).map(|i: u64| {
-            Aes128EcbEnc::new_from_slice(&SECRET_KEY)
+            Aes128EcbEnc::new_from_slice(&AES_KEY)
                 .unwrap()
                 .encrypt_padded_vec::<NoPadding>(&&[0_u64.to_le_bytes(), i.to_le_bytes()].concat())
             })

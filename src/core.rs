@@ -7,6 +7,8 @@ use itertools::Itertools;
 use std::{collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
 use once_cell::sync::Lazy;
 use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyInit, block_padding::{NoPadding, Pkcs7}};
+use std::fs::File;
+use std::io::{BufReader, Read};
 
 pub type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
 pub type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
@@ -23,13 +25,29 @@ pub const ENGLISH_FREQ: Lazy<HashMap<char, f64>> = Lazy::new(|| {
     ])
 });
 
-pub static SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
-    generate_aes_key()
-});
+pub static AES_KEY: Lazy<Vec<u8>> = Lazy::new(|| generate_aes_key());
 
-pub static SECRET_IV: Lazy<Vec<u8>> = Lazy::new(|| {
-    generate_aes_key()
-});
+pub static IV: Lazy<Vec<u8>> = Lazy::new(|| generate_aes_key());
+
+pub static NONCE: Lazy<u64> = Lazy::new(|| rand::random::<u64>());
+
+pub fn file_to_string(path: &str) -> String {
+    let file_in = File::open(path).unwrap();
+    let mut reader_in = BufReader::new(file_in);
+    let mut contents = String::new();
+    reader_in.read_to_string(&mut contents).unwrap();
+
+    contents.replace("\n", "")
+}
+
+pub fn file_to_bytes(path: &str) -> Vec<u8> {
+    let file_in = File::open(path).unwrap();
+    let mut reader_in = BufReader::new(file_in);
+    let mut contents = Vec::new();
+    reader_in.read_to_end(&mut contents).unwrap();
+
+    contents
+}
 
 pub fn hex_to_bytes(string: &str) -> Vec<u8> {
     hex::decode(string).unwrap()
@@ -60,7 +78,7 @@ pub fn xor_slice(a: &[u8], b: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-pub fn single_byte_xor(bytes: &[u8], key: &u8) -> Vec<u8> {
+pub fn single_byte_xor(bytes: &[u8], key: u8) -> Vec<u8> {
     bytes.iter().map(|byte| byte ^ key).collect()
 }
 
@@ -86,7 +104,7 @@ pub fn score_english(bytes: &[u8]) -> f64 {
 pub fn crack_single_byte_xor(bytes: &[u8]) -> (u8, Vec<u8>, f64) {
     (0..=255)
         .map(|key| {
-            let plaintext = single_byte_xor(bytes, &key);
+            let plaintext = single_byte_xor(bytes, key);
             let score = score_english(&plaintext);
             (key, plaintext, score)
         })
@@ -324,7 +342,7 @@ impl MT19937 {
     pub const C: u32 = 0xefc60000;
     pub const F: u32 = 1812433253;
 
-    pub fn new(seed: &u32) -> Self {
+    pub fn new(seed: u32) -> Self {
         let mut seed = seed.clone();
         let mut state_array = vec![seed];
 
@@ -373,8 +391,8 @@ impl MT19937 {
 }
 
 // turn MT19937 into a stream cipher. same function for encrypting and decrypting
-pub fn mt19937_stream_cipher(input: &[u8], seed: &u32) -> Vec<u8> {
-    let mut rng = MT19937::new(&seed);
+pub fn mt19937_stream_cipher(input: &[u8], seed: u32) -> Vec<u8> {
+    let mut rng = MT19937::new(seed);
     input.chunks(4)
         .map(|block| xor_slice(block, &rng.random_u32().to_be_bytes()[..block.len()]))
         .flatten()
@@ -382,7 +400,7 @@ pub fn mt19937_stream_cipher(input: &[u8], seed: &u32) -> Vec<u8> {
 }
 
 pub fn crack_mt19937(bytes: &[u8], mut range: Range<u32>) -> Option<u32> {
-    range.find(|seed| {
+    range.find(|&seed| {
         let mut rng = MT19937::new(seed);
         let candidate = bytes.chunks(4)
             .map(|_| rng.random_u32().to_be_bytes())
