@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use std::assert_eq;
+use std::{assert_eq, ops::Range};
 use hex;
 use base64::prelude::*;
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
 use once_cell::sync::Lazy;
 use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyInit, block_padding::{NoPadding, Pkcs7}};
 
@@ -60,7 +60,7 @@ pub fn xor_slice(a: &[u8], b: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-pub fn single_byte_xor(bytes: &[u8], key: u8) -> Vec<u8> {
+pub fn single_byte_xor(bytes: &[u8], key: &u8) -> Vec<u8> {
     bytes.iter().map(|byte| byte ^ key).collect()
 }
 
@@ -86,7 +86,7 @@ pub fn score_english(bytes: &[u8]) -> f64 {
 pub fn crack_single_byte_xor(bytes: &[u8]) -> (u8, Vec<u8>, f64) {
     (0..=255)
         .map(|key| {
-            let plaintext = single_byte_xor(bytes, key);
+            let plaintext = single_byte_xor(bytes, &key);
             let score = score_english(&plaintext);
             (key, plaintext, score)
         })
@@ -283,8 +283,8 @@ pub fn detect_prefix_len<F>(encrypt_fn: F, block_size: usize) -> usize where F: 
     0
 }
 
-pub fn ctr(ciphertext: &[u8], key: &[u8], nonce: u64) -> Vec<u8> {
-    ciphertext.chunks(16)
+pub fn ctr(input: &[u8], key: &[u8], nonce: u64) -> Vec<u8> {
+    input.chunks(16)
         .enumerate()
         .map(|(i, block)| {
             let keystream = Aes128EcbEnc::new_from_slice(key)
@@ -294,6 +294,13 @@ pub fn ctr(ciphertext: &[u8], key: &[u8], nonce: u64) -> Vec<u8> {
         })
         .flatten()
         .collect()
+}
+
+pub fn unix_time() -> u32 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as u32
 }
 
 pub struct MT19937 {
@@ -363,4 +370,25 @@ impl MT19937 {
             index: 0,
         }
     }
+}
+
+// turn MT19937 into a stream cipher. same function for encrypting and decrypting
+pub fn mt19937_stream_cipher(input: &[u8], seed: &u32) -> Vec<u8> {
+    let mut rng = MT19937::new(&seed);
+    input.chunks(4)
+        .map(|block| xor_slice(block, &rng.random_u32().to_be_bytes()[..block.len()]))
+        .flatten()
+        .collect()
+}
+
+pub fn crack_mt19937(bytes: &[u8], mut range: Range<u32>) -> Option<u32> {
+    range.find(|seed| {
+        let mut rng = MT19937::new(seed);
+        let candidate = bytes.chunks(4)
+            .map(|_| rng.random_u32().to_be_bytes())
+            .flatten()
+            .collect_vec();
+
+        candidate == bytes
+    })
 }

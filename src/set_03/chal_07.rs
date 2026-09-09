@@ -2,7 +2,7 @@
 mod tests {
     use itertools::Itertools;
 
-use crate::core::*;
+    use crate::core::*;
 
     fn untemper(output: &u32) -> u32 {
         let mut y = output ^ (output >> MT19937::L);
@@ -26,7 +26,7 @@ use crate::core::*;
 
     #[test]
     fn s03_c07_cloning_an_mt19937_rng_from_its_output() {
-        let mut rng = MT19937::new(&rand::random::<u32>());
+        let mut rng = MT19937::new(&rand::random());
         let recovered_state = (0..624)
             .map(|_| untemper(&rng.random_u32()))
             .collect_vec();
