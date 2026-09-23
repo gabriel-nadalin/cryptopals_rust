@@ -26,7 +26,7 @@ mod tests {
             ciphertext.truncate(min_len);
         };
 
-        let ciphertexts_concat = ciphertexts.iter().flatten().copied().collect_vec();
+        let ciphertexts_concat = ciphertexts.concat();
 
         let keystream = crack_repeating_key_xor(&ciphertexts_concat);
 
@@ -41,8 +41,7 @@ mod tests {
                 .unwrap()
                 .encrypt_padded_vec::<NoPadding>(&&[0_u64.to_le_bytes(), i.to_le_bytes()].concat())
             })
-            .flatten()
-            .collect_vec();
+            .concat();
 
         assert_eq!(keystream[1..min_len], expected_keystream[1..min_len]);
     }

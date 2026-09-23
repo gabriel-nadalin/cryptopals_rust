@@ -86,8 +86,7 @@ mod tests {
                 .unwrap()
                 .encrypt_padded_vec::<NoPadding>(&&[0_u64.to_le_bytes(), i.to_le_bytes()].concat())
             })
-            .flatten()
-            .collect_vec();
+            .concat();
 
         // little more lenient assertion because of intended manual solution
         assert_eq!(keystream[1..30], real_keystream[1..30]);

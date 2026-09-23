@@ -30,7 +30,7 @@ mod tests {
         let recovered_state = (0..624)
             .map(|_| untemper(&rng.random_u32()))
             .collect_vec();
-        let mut spliced_rng = MT19937::new_from_vec(recovered_state);
+        let mut spliced_rng = MT19937::new_from_slice(&recovered_state);
 
         for _ in 0..10000 {
             assert_eq!(spliced_rng.random_u32(), rng.random_u32());

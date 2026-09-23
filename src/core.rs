@@ -231,8 +231,7 @@ pub fn cbc_decrypt(ciphertext: &[u8], key: &[u8], iv:&[u8]) -> Result<Vec<u8>, S
 
             xor_slice(&decrypted, prev_block)
         })
-        .flatten()
-        .collect();
+        .concat();
 
     pkcs7_unpad(&plaintext)
 }
@@ -254,7 +253,7 @@ pub fn cbc_encrypt(plaintext: &[u8], key: &[u8], iv:&[u8]) -> Vec<u8> {
         prev_block = ciphertext.last().unwrap();
     }
 
-    ciphertext.iter().cloned().flatten().collect()
+    ciphertext.concat()
 }
 
 pub fn generate_aes_key() -> Vec<u8> {
@@ -310,8 +309,7 @@ pub fn ctr(input: &[u8], key: &[u8], nonce: u64) -> Vec<u8> {
                 .encrypt_padded_vec::<NoPadding>(&&[nonce.to_le_bytes(), i.to_le_bytes()].concat());
             xor_slice(block, &keystream[..block.len()])
         })
-        .flatten()
-        .collect()
+        .concat()
 }
 
 pub fn unix_time() -> u32 {
@@ -322,7 +320,7 @@ pub fn unix_time() -> u32 {
 }
 
 pub struct MT19937 {
-    state_array: Vec<u32>,
+    state_array: [u32; Self::N],
     index: usize
 }
 
@@ -344,11 +342,12 @@ impl MT19937 {
 
     pub fn new(seed: u32) -> Self {
         let mut seed = seed.clone();
-        let mut state_array = vec![seed];
+        let mut state_array = [0; Self::N];vec![seed];
+        state_array[0] = seed;
 
-        for i in 1..Self::N as u32 {
-            seed = Self::F.wrapping_mul(seed ^ (seed >> (Self::W-2))).wrapping_add(i);
-            state_array.push(seed);
+        for i in 1..Self::N {
+            seed = Self::F.wrapping_mul(seed ^ (seed >> (Self::W-2))).wrapping_add(i as u32);
+            state_array[i] = seed;
         }
 
         Self {
@@ -382,9 +381,9 @@ impl MT19937 {
         z
     }
 
-    pub fn new_from_vec(state_array: Vec<u32>) -> Self {
+    pub fn new_from_slice(state_array: &[u32]) -> Self {
         Self {
-            state_array,
+            state_array: *state_array.as_array().unwrap(),
             index: 0,
         }
     }
@@ -395,8 +394,7 @@ pub fn mt19937_stream_cipher(input: &[u8], seed: u32) -> Vec<u8> {
     let mut rng = MT19937::new(seed);
     input.chunks(4)
         .map(|block| xor_slice(block, &rng.random_u32().to_be_bytes()[..block.len()]))
-        .flatten()
-        .collect()
+        .concat()
 }
 
 pub fn crack_mt19937(bytes: &[u8], mut range: Range<u32>) -> Option<u32> {
@@ -409,4 +407,273 @@ pub fn crack_mt19937(bytes: &[u8], mut range: Range<u32>) -> Option<u32> {
 
         candidate == bytes
     })
+}
+
+pub struct SHA1 {
+    state: [u32; 5],
+    message_len: u64,
+    buffer: Vec<u8>,
+}
+
+impl SHA1 {
+    pub fn new() -> Self {
+        Self {
+            state: [
+                0x67452301,
+                0xEFCDAB89,
+                0x98BADCFE,
+                0x10325476,
+                0xC3D2E1F0,
+            ],
+            message_len: 0,
+            buffer: Vec::new(),
+        }
+    }
+
+    pub fn from_slice(state: &[u32], ml: u64) -> Self {
+        Self {
+            state: *state.as_array().unwrap(),
+            message_len: ml,
+            buffer: Vec::new(),
+        }
+    }
+
+    pub fn process_block(&mut self, block: &[u8]) {
+        assert!(block.len() == 64, "invalid block size");
+        
+        let mut words = block
+            .chunks(4)
+            .map(|word| u32::from_be_bytes(*word.as_array().unwrap()))
+            .collect_vec();
+
+        for i in 16..80 {
+            words.push((words[i-3] ^ words[i-8] ^ words[i-14] ^ words[i-16]).rotate_left(1));
+        }
+
+        let [mut a, mut b, mut c, mut d, mut e] = self.state;
+
+        for i in 0..80 {
+            let (f, k);
+            match i {
+                0..20 => {
+                    f = (b & c) | (!b & d);
+                    k = 0x5A827999;
+                },
+                20..40 => {
+                    f = b ^ c ^ d;
+                    k = 0x6ED9EBA1;
+                },
+                40..60 => {
+                    f = (b & c) | (b & d) | (c & d);
+                    k = 0x8F1BBCDC;
+                },
+                60..80 => {
+                    f = b ^ c ^ d;
+                    k = 0xCA62C1D6;
+                },
+                _ => panic!("unexpected value")
+            }
+
+            let temp = a.rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(words[i]);
+
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = temp;
+        }
+
+        self.state[0] = self.state[0].wrapping_add(a);
+        self.state[1] = self.state[1].wrapping_add(b); 
+        self.state[2] = self.state[2].wrapping_add(c);
+        self.state[3] = self.state[3].wrapping_add(d);
+        self.state[4] = self.state[4].wrapping_add(e);
+    }
+
+    pub fn padding(byte_len: u64) -> Vec<u8> {
+        let bit_len = byte_len << 3;
+        let n_pad = (56 - (byte_len + 1) as isize).rem_euclid(64) as usize;
+        [[0x80].as_slice(), &[0].repeat(n_pad), &bit_len.to_be_bytes()].concat()
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        for &b in data {
+            self.buffer.push(b);
+            self.message_len += 1;
+            if self.buffer.len() == 64 {
+                self.process_block(&self.buffer.clone());
+                self.buffer.clear();
+            }
+        }
+    }
+
+    pub fn finalize(&mut self) -> Vec<u8> {
+        let padding = Self::padding(self.message_len);
+        self.update(&padding);
+        assert!(self.buffer.is_empty(), "invalid buffer state");
+        self.state.map(|word| word.to_be_bytes()).concat()
+    }
+
+    pub fn digest(message: &[u8]) -> Vec<u8> {
+        let mut sha1 = Self::new();
+        sha1.update(message);
+        sha1.finalize()
+    }
+}
+
+pub struct MD4 {
+    state: [u32; 4],
+    message_len: u64,
+    buffer: Vec<u8>,
+}
+
+impl MD4 {
+    pub fn new() -> Self {
+        Self {
+            state: [
+                0x67452301,
+                0xEFCDAB89,
+                0x98BADCFE,
+                0x10325476,
+            ],
+            message_len: 0,
+            buffer: Vec::new(),
+        }
+    }
+    
+    pub fn from_slice(state: &[u32], ml: u64) -> Self {
+        Self {
+            state: *state.as_array().unwrap(),
+            message_len: ml,
+            buffer: Vec::new(),
+        }
+    }
+    
+    pub fn f(x: u32, y: u32, z: u32) -> u32 {
+        (x & y) | (!x & z)
+    }
+    
+    pub fn g(x: u32, y: u32, z: u32) -> u32 {
+        (x & y) | (x & z) | (y & z)
+    }
+    
+    pub fn h(x: u32, y: u32, z: u32) -> u32 {
+        x ^ y ^ z
+    }
+    
+    pub fn ff(a: &mut u32, b: u32, c: u32, d: u32, x: u32, s: u32) {
+        *a = a.wrapping_add(Self::f(b, c, d)).wrapping_add(x).rotate_left(s);
+    }
+    
+    pub fn gg(a: &mut u32, b: u32, c: u32, d: u32, x: u32, s: u32) {
+        *a = a.wrapping_add(Self::g(b, c, d)).wrapping_add(x).wrapping_add(0x5A827999).rotate_left(s);
+    }
+    
+    pub fn hh(a: &mut u32, b: u32, c: u32, d: u32, x: u32, s: u32) {
+        *a = a.wrapping_add(Self::h(b, c, d)).wrapping_add(x).wrapping_add(0x6ED9EBA1).rotate_left(s);
+    }
+
+    pub fn process_block(&mut self, block: &[u8]) {
+        assert!(block.len() == 64, "invalid block size");
+        
+        let words = block
+            .chunks(4)
+            .map(|word| u32::from_le_bytes(*word.as_array().unwrap()))
+            .collect_vec();
+
+        let [mut a, mut b, mut c, mut d] = self.state;
+
+        // round 1
+        Self::ff(&mut a, b, c, d, words[0],  3);
+        Self::ff(&mut d, a, b, c, words[1],  7);
+        Self::ff(&mut c, d, a, b, words[2],  11);
+        Self::ff(&mut b, c, d, a, words[3],  19);
+        Self::ff(&mut a, b, c, d, words[4],  3);
+        Self::ff(&mut d, a, b, c, words[5],  7);
+        Self::ff(&mut c, d, a, b, words[6],  11);
+        Self::ff(&mut b, c, d, a, words[7],  19);
+        Self::ff(&mut a, b, c, d, words[8],  3);
+        Self::ff(&mut d, a, b, c, words[9],  7);
+        Self::ff(&mut c, d, a, b, words[10], 11);
+        Self::ff(&mut b, c, d, a, words[11], 19);
+        Self::ff(&mut a, b, c, d, words[12], 3);
+        Self::ff(&mut d, a, b, c, words[13], 7);
+        Self::ff(&mut c, d, a, b, words[14], 11);
+        Self::ff(&mut b, c, d, a, words[15], 19);
+
+        // round 2
+        Self::gg(&mut a, b, c, d, words[0],  3);
+        Self::gg(&mut d, a, b, c, words[4],  5);
+        Self::gg(&mut c, d, a, b, words[8],  9);
+        Self::gg(&mut b, c, d, a, words[12], 13);
+        Self::gg(&mut a, b, c, d, words[1],  3);
+        Self::gg(&mut d, a, b, c, words[5],  5);
+        Self::gg(&mut c, d, a, b, words[9],  9);
+        Self::gg(&mut b, c, d, a, words[13], 13);
+        Self::gg(&mut a, b, c, d, words[2],  3);
+        Self::gg(&mut d, a, b, c, words[6],  5);
+        Self::gg(&mut c, d, a, b, words[10], 9);
+        Self::gg(&mut b, c, d, a, words[14], 13);
+        Self::gg(&mut a, b, c, d, words[3],  3);
+        Self::gg(&mut d, a, b, c, words[7],  5);
+        Self::gg(&mut c, d, a, b, words[11], 9);
+        Self::gg(&mut b, c, d, a, words[15], 13);
+
+        // round 3
+        Self::hh(&mut a, b, c, d, words[0],  3);
+        Self::hh(&mut d, a, b, c, words[8],  9);
+        Self::hh(&mut c, d, a, b, words[4],  11);
+        Self::hh(&mut b, c, d, a, words[12], 15);
+        Self::hh(&mut a, b, c, d, words[2],  3);
+        Self::hh(&mut d, a, b, c, words[10], 9);
+        Self::hh(&mut c, d, a, b, words[6],  11);
+        Self::hh(&mut b, c, d, a, words[14], 15);
+        Self::hh(&mut a, b, c, d, words[1],  3);
+        Self::hh(&mut d, a, b, c, words[9],  9);
+        Self::hh(&mut c, d, a, b, words[5],  11);
+        Self::hh(&mut b, c, d, a, words[13], 15);
+        Self::hh(&mut a, b, c, d, words[3],  3);
+        Self::hh(&mut d, a, b, c, words[11], 9);
+        Self::hh(&mut c, d, a, b, words[7],  11);
+        Self::hh(&mut b, c, d, a, words[15], 15);
+
+        self.state[0] = self.state[0].wrapping_add(a);
+        self.state[1] = self.state[1].wrapping_add(b); 
+        self.state[2] = self.state[2].wrapping_add(c);
+        self.state[3] = self.state[3].wrapping_add(d);
+    }
+
+    pub fn padding(byte_len: u64) -> Vec<u8> {
+        let bit_len = byte_len << 3;
+        let n_pad = (56 - (byte_len + 1) as isize).rem_euclid(64) as usize;
+        [[0x80].as_slice(), &[0].repeat(n_pad), &bit_len.to_le_bytes()].concat()
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        for &b in data {
+            self.buffer.push(b);
+            self.message_len += 1;
+            if self.buffer.len() == 64 {
+                self.process_block(&self.buffer.clone());
+                self.buffer.clear();
+            }
+        }
+    }
+
+    pub fn finalize(&mut self) -> Vec<u8> {
+        let padding = Self::padding(self.message_len);
+        self.update(&padding);
+        assert!(self.buffer.is_empty(), "invalid buffer state");
+        self.state.map(|word| word.to_le_bytes()).concat()
+    }
+
+    pub fn digest(message: &[u8]) -> Vec<u8> {
+        let mut md4 = Self::new();
+        md4.update(message);
+        md4.finalize()
+    }
 }
