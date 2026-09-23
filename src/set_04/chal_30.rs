@@ -1,24 +1,15 @@
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
-    use std::fs;
-    use once_cell::sync::Lazy;
 
     use crate::core::*;
-    
-    static KEY: Lazy<Vec<u8>> = Lazy::new(|| {
-        let contents = fs::read_to_string("/usr/share/dict/words").unwrap();
-        let lines: Vec<&str> = contents.lines().collect();
-
-        lines[rand::random_range(0..lines.len())].as_bytes().to_vec()
-    });
 
     fn sign_message(message: &[u8]) -> Vec<u8> {
-        MD4::digest(&[KEY.to_vec(), message.to_vec()].concat())
+        MD4::digest(&[&DICT_KEY, message].concat())
     }
 
     fn verify_message(message: &[u8], mac: &[u8]) -> bool {
-        let digest = MD4::digest(&[KEY.to_vec(), message.to_vec()].concat());
+        let digest = MD4::digest(&[&DICT_KEY, message].concat());
         mac == &digest
     }
     

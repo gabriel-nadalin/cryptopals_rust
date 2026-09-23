@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{assert_eq, ops::Range};
+use std::{assert_eq, ops::Range, fs};
 use hex;
 use base64::prelude::*;
 use itertools::Itertools;
@@ -30,6 +30,13 @@ pub static AES_KEY: Lazy<Vec<u8>> = Lazy::new(|| generate_aes_key());
 pub static IV: Lazy<Vec<u8>> = Lazy::new(|| generate_aes_key());
 
 pub static NONCE: Lazy<u64> = Lazy::new(|| rand::random::<u64>());
+
+pub static DICT_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
+    let contents = fs::read_to_string("/usr/share/dict/words").unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+
+    lines[rand::random_range(0..lines.len())].as_bytes().to_vec()
+});
 
 pub fn file_to_string(path: &str) -> String {
     let file_in = File::open(path).unwrap();
@@ -676,4 +683,19 @@ impl MD4 {
         md4.update(message);
         md4.finalize()
     }
+}
+
+pub fn hmac<F>(key: &[u8], message: &[u8], hash: F, block_size: usize) -> Vec<u8>
+where F: Fn(&[u8]) -> Vec<u8>  {
+    let block_key = if key.len() >= block_size {
+        hash(key)
+    }
+    else {
+        key.iter().copied().pad_using(block_size, |_| 0).collect()
+    };
+
+    let o_key_pad = xor_slice(&block_key, &vec![0x5c; block_size]);
+    let i_key_pad = xor_slice(&block_key, &vec![0x36; block_size]);
+
+    hash(&[o_key_pad, hash(&[&i_key_pad, message].concat())].concat())
 }

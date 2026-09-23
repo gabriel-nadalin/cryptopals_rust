@@ -5,9 +5,13 @@ edition = "2024"
 
 [dependencies]
 aes = "0.9.3"
+axum = "0.8.9"
 base64 = "0.22.1"
 ecb = { version = "0.2.1", features = ["alloc"] }
+futures = { version = "0.3.34", features = ["alloc"] }
 hex = "0.4.3"
 itertools = "0.15.0"
 once_cell = "1.19"
 rand = "0.10.2"
+reqwest = "0.13.5"
+tokio = "1.53.1"
