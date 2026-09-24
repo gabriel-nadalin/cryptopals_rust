@@ -56,18 +56,7 @@ mod tests {
         let client = reqwest::Client::new();
 
         for i in 0..20 {
-            // measuring baseline delay for this byte from first 2 possible values
-            // so we can break early from for loop by comparing to baseline
-            // (or else attack takes 40 minutes (it still takes like 24 min))
-            sig[i] = 0x00;
-            let url = format!("http://localhost:{port}/test?file=foo&signature={}", bytes_to_hex(&sig));
-            let t1 = measure_delay(&client, &url).await;
-            
-            sig[i] = 0x01;
-            let url = format!("http://localhost:{port}/test?file=foo&signature={}", bytes_to_hex(&sig));
-            let t2 = measure_delay(&client, &url).await;
-            
-            let baseline = t1.min(t2);
+            let mut best_delay = Duration::ZERO;
             let mut best_byte = 0;
             
             for byte in 0..=255 {
@@ -76,9 +65,9 @@ mod tests {
 
                 let delay = measure_delay(&client, &url).await;
 
-                if delay > baseline + Duration::from_millis(5) {
+                if delay > best_delay {
+                    best_delay = delay;
                     best_byte = byte;
-                    break;
                 }
             }
 

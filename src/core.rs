@@ -9,6 +9,7 @@ use once_cell::sync::Lazy;
 use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyInit, block_padding::{NoPadding, Pkcs7}};
 use std::fs::File;
 use std::io::{BufReader, Read};
+use num::PrimInt;
 
 pub type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
 pub type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
@@ -698,4 +699,28 @@ where F: Fn(&[u8]) -> Vec<u8>  {
     let i_key_pad = xor_slice(&block_key, &vec![0x36; block_size]);
 
     hash(&[o_key_pad, hash(&[&i_key_pad, message].concat())].concat())
+}
+
+pub fn modexp<T>(n: T, e: T, m: T) -> T
+where T: PrimInt {
+    assert!(e >= T::zero());
+    
+    if e == T::zero() {
+        return T::one();
+    }
+
+    let mut result = T::one();
+    let mut base = n % m;
+    let mut exp = e;
+
+    loop {
+        if exp & T::one() == T::one() {
+            result = (result * base) % m;
+        }
+        if exp == T::one() {
+            return result;
+        }
+        base = base * base % m;
+        exp = exp >> 1;
+    }
 }
