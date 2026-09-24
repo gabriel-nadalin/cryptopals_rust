@@ -37,6 +37,12 @@ mod tests {
         let app = Router::new().route("/test", get(handle_test));
         axum::serve(listener, app).await.unwrap();
     }
+    
+    async fn measure_delay(client: &reqwest::Client, url: &str) -> Duration {
+        let start = Instant::now();
+        let _ = client.get(url).send().await;
+        start.elapsed()
+    }
 
     #[tokio::test]
     async fn s04_c31_breaking_hmac_sha1_with_artificial_timing_leak() {
@@ -50,20 +56,29 @@ mod tests {
         let client = reqwest::Client::new();
 
         for i in 0..20 {
-            let mut best_delay = Duration::ZERO;
+            // measuring baseline delay for this byte from first 2 possible values
+            // so we can break early from for loop by comparing to baseline
+            // (or else attack takes 40 minutes (it still takes like 24 min))
+            sig[i] = 0x00;
+            let url = format!("http://localhost:{port}/test?file=foo&signature={}", bytes_to_hex(&sig));
+            let t1 = measure_delay(&client, &url).await;
+            
+            sig[i] = 0x01;
+            let url = format!("http://localhost:{port}/test?file=foo&signature={}", bytes_to_hex(&sig));
+            let t2 = measure_delay(&client, &url).await;
+            
+            let baseline = t1.min(t2);
             let mut best_byte = 0;
             
             for byte in 0..=255 {
                 sig[i] = byte;
                 let url = format!("http://localhost:{port}/test?file=foo&signature={}", bytes_to_hex(&sig));
-                
-                let start = Instant::now();
-                let _ = client.get(url).send().await.unwrap();
-                let delay = start.elapsed();
 
-                if delay > best_delay {
-                    best_delay = delay;
+                let delay = measure_delay(&client, &url).await;
+
+                if delay > baseline + Duration::from_millis(5) {
                     best_byte = byte;
+                    break;
                 }
             }
 
